@@ -26,12 +26,18 @@ def fetch_data(days_back=60):
             close_2200 = day_data.iloc[-1]['Close'] 
             vol_first_hour = day_data.iloc[0]['Volume']
             
+            trading_period = day_data.iloc[1:]
+            max_during_trade = trading_period['High'].max()
+            min_during_trade = trading_period['Low'].min()
+            
             daily_rows.append({
                 'Date': d,
                 'QQQ_Open_1530': float(open_1530),
                 'QQQ_Price_1600': float(price_1600),
                 'QQQ_Close_2200': float(close_2200),
-                'QQQ_Vol_First_30Min': float(vol_first_hour)
+                'QQQ_Vol_First_30Min': float(vol_first_hour),
+                'QQQ_Max_After_1600': float(max_during_trade),
+                'QQQ_Min_After_1600': float(min_during_trade)
             })
         except Exception:
             continue
@@ -77,9 +83,8 @@ def fetch_data(days_back=60):
     df = df.join(macro_df)
     df.ffill(inplace=True)
     df.dropna(inplace=True)
-        
+    
     print(f"Total rows: {len(df)}")
-
     return df
 
 if __name__ == "__main__":
