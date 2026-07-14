@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from datetime import datetime, timedelta
 
@@ -9,129 +8,123 @@ try:
     df = pd.read_csv('trading_data.csv', index_col=0)
     df.index = pd.to_datetime(df.index)
 except FileNotFoundError:
-    print("Error: trading_data.csv not found. Run data.py first.")
+    print("CSV missing. Run data.py.")
     exit()
 
-df['Target'] = np.where(df['QQQ_1600_to_2200_Return'] > 0, 1, 0)
+df['Target'] = np.where(df['qqq_trade_move'] > 0, 1, 0)
 
 features = [
-    'VIX_Close_Yesterday', 'DAX_Return_Today', 'SP_Futures_Return_Today', 
-    'Nikkei_Return_Today', 'TNX_Return_Today', 'RUT_Return_Today',
-    'QQQ_First_30Min_Return', 'QQQ_First_30Min_Vol_Ratio'
+    'vix_prev', 'dax_move', 'spy_move', 'nikkei_move', 
+    'us10y_move', 'rut_move', 'qqq_open_move', 'vol_ratio',
+    'smh_move', 'rsi_1600', 'atr_ratio'
 ]
 
-x = df[features]
+X = df[features]
 y = df['Target']
 
-split = int(len(df) * 0.7)
-x_train, x_test = x.iloc[:split], x.iloc[split:]
-y_train, y_test = y.iloc[:split], y.iloc[split:]
+# split 70% train, 30% test
+split_date = '2025-11-01'
+X_train = X[X.index < split_date]
+X_test = X[X.index >= split_date]
+y_train = y[X.index < split_date]
+y_test = y[X.index >= split_date]
 
-model = RandomForestClassifier(n_estimators=100, random_state=42)
-model.fit(x_train, y_train)
+model = RandomForestClassifier(n_estimators=150, min_samples_leaf=2, random_state=42)
+model.fit(X_train, y_train)
 
-probs = model.predict_proba(x_test)[:, 1]
+probs = model.predict_proba(X_test)[:, 1]
 
-res = pd.DataFrame(index=x_test.index)
-res['Actual_Outcome'] = y_test
-res['Prob_Up'] = probs * 100
-res['Signal'] = 0 
+res = pd.DataFrame(index=X_test.index)
+res['actual'] = y_test
+res['prob_up'] = probs * 100
+res['signal'] = 0 
 
-res.loc[res['Prob_Up'] > 55, 'Signal'] = 1
-res.loc[res['Prob_Up'] < 45, 'Signal'] = -1
-
-end_date = datetime.now()
-start_date = end_date - timedelta(days=60)
-qqq_hourly = yf.download('QQQ', start=start_date, end=end_date, interval='60m', progress=False)
-if isinstance(qqq_hourly.columns, pd.MultiIndex):
-    qqq_hourly.columns = qqq_hourly.columns.get_level_values(0)
-qqq_hourly['Date'] = qqq_hourly.index.date
-
-TRAILING_PCT = 0.5
-res_returns = []
-
-for date_idx, row in res.iterrows():
-    signal = row['Signal']
-    current_date = date_idx.date()
+for idx, row in X_test.iterrows():
+    prob = res.loc[idx, 'prob_up']
+    atr_val = row['atr_ratio']
     
-    if signal == 0:
-        res_returns.append(0.0)
+    # Skip days with no market momentum, less than 60% of normal volatility
+    if atr_val < 0.60:
         continue
         
-    day_candles = qqq_hourly[qqq_hourly['Date'] == current_date]
-    
+    # confidence levels trading
+    if prob > 56.0:
+        res.loc[idx, 'signal'] = 1
+    elif prob < 44.0:
+        res.loc[idx, 'signal'] = -1
+
+qqq_hour = yf.download('QQQ', start=X_test.index.min() - timedelta(days=5), end=X_test.index.max() + timedelta(days=5), interval='60m', progress=False)
+if isinstance(qqq_hour.columns, pd.MultiIndex):
+    qqq_hour.columns = qqq_hour.columns.get_level_values(0)
+qqq_hour['Date'] = qqq_hour.index.date
+
+trail_pct = 0.25
+trade_returns = []
+
+for idx, row in res.iterrows():
+    sig = row['signal']
+    if sig == 0:
+        trade_returns.append(0.0)
+        continue
+        
+    day_candles = qqq_hour[qqq_hour['Date'] == idx.date()]
     if len(day_candles) < 2:
-        res_returns.append(df.loc[date_idx, 'QQQ_1600_to_2200_Return'] if signal == 1 else -df.loc[date_idx, 'QQQ_1600_to_2200_Return'])
+        trade_returns.append(0.0)
         continue
         
-    trade_candles = day_candles.iloc[1:]
-    entry_price = day_candles.iloc[0]['Close']
+    candles = day_candles.iloc[1:]
+    entry = day_candles.iloc[0]['Close']
+    stopped = False
+    ret = 0.0
     
-    stopped_out = False
-    final_return = 0.0
-    
-    if signal == 1:
-        highest_price = entry_price
-        stop_loss = entry_price * (1 - TRAILING_PCT / 100)
-        
-        for _, candle in trade_candles.iterrows():
-            if candle['Low'] <= stop_loss:
-                stopped_out = True
-                final_return = ((stop_loss - entry_price) / entry_price) * 100
+    if sig == 1:
+        peak = entry
+        stop = entry * (1 - trail_pct / 100)
+        for _, candle in candles.iterrows():
+            if candle['Low'] <= stop:
+                stopped = True
+                ret = ((stop - entry) / entry) * 100
                 break
-
-            if candle['High'] > highest_price:
-                highest_price = candle['High']
-                stop_loss = highest_price * (1 - TRAILING_PCT / 100)
-                
-        if not stopped_out:
-            final_return = ((day_candles.iloc[-1]['Close'] - entry_price) / entry_price) * 100
+            if candle['High'] > peak:
+                peak = candle['High']
+                stop = peak * (1 - trail_pct / 100)
+        if not stopped:
+            ret = ((day_candles.iloc[-1]['Close'] - entry) / entry) * 100
             
-    elif signal == -1:
-        lowest_price = entry_price
-        stop_loss = entry_price * (1 + TRAILING_PCT / 100)
-        
-        for _, candle in trade_candles.iterrows():
-
-            if candle['High'] >= stop_loss:
-                stopped_out = True
-                final_return = ((entry_price - stop_loss) / entry_price) * 100
+    elif sig == -1:
+        floor = entry
+        stop = entry * (1 + trail_pct / 100)
+        for _, candle in candles.iterrows():
+            if candle['High'] >= stop:
+                stopped = True
+                ret = ((entry - stop) / entry) * 100
                 break
+            if candle['Low'] < floor:
+                floor = candle['Low']
+                stop = floor * (1 + trail_pct / 100)
+        if not stopped:
+            ret = ((entry - day_candles.iloc[-1]['Close']) / entry) * 100
 
-            if candle['Low'] < lowest_price:
-                lowest_price = candle['Low']
-                stop_loss = lowest_price * (1 + TRAILING_PCT / 100)
-                
-        if not stopped_out:
-            final_return = ((entry_price - day_candles.iloc[-1]['Close']) / entry_price) * 100
+    trade_returns.append(float(ret))
 
-    res_returns.append(final_return)
+res['ret'] = trade_returns
+res['actual_return'] = df.loc[X_test.index, 'qqq_trade_move']
+res['balance'] = 100.0 * (1 + res['ret'] / 100).cumprod()
 
-res['Res_Return'] = res_returns
-res['Actual_Return'] = df.loc[x_test.index, 'QQQ_1600_to_2200_Return']
-#
-
-capital = 100.0
-res['Balance'] = capital * (1 + res['Res_Return'] / 100).cumprod()
-
-trades = res[res['Signal'] != 0]
-print(f"Test days: {len(res)}")
-print(f"Trades taken: {len(trades)}")
+trades = res[res['signal'] != 0]
+print(f"Test Days: {len(res)} | Trades Taken: {len(trades)}")
 
 if len(trades) > 0:
-    correct = res['Res_Return'] > 0
-    print(f"Trade Accuracy: {correct.mean() * 100:.2f}%")
-
-print("\nRecent predictions:")
-print(res[['Actual_Outcome', 'Actual_Return', 'Prob_Up', 'Signal', 'Balance']].tail(10))
-print(f"\nFinal Balance: {res['Balance'].iloc[-1]:.2f} USD")
-
-wins = res[res['Res_Return'] > 0]['Res_Return']
-losses = res[res['Res_Return'] < 0]['Res_Return']
-
-if len(wins) > 0 and len(losses) > 0:
-    print(f"\nAvg Win: +{wins.mean():.2f}%")
-    print(f"Avg Loss: {losses.mean():.2f}%")
-    if abs(losses.sum()) > 0:
+    win_rate = (trades['ret'] > 0).mean() * 100
+    print(f"Win Rate: {win_rate:.2f}%")
+    print(f"Final Balance: {res['balance'].iloc[-1]:.2f} USD")
+    
+    wins = trades[trades['ret'] > 0]['ret']
+    losses = trades[trades['ret'] < 0]['ret']
+    if len(wins) > 0 and len(losses) > 0:
         pf = wins.sum() / abs(losses.sum())
         print(f"Profit Factor: {pf:.2f}")
+
+# print last 8 days
+print("\nLast 8 trading days:")
+print(res[['actual', 'actual_return', 'prob_up', 'signal', 'balance']].tail(8))
