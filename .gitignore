@@ -1,1 +1,7 @@
 trading_data.csv
+
+today_trade.json
+
+virtual_balance.json
+
+__pycache__/
