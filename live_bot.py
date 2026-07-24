@@ -24,7 +24,6 @@ def notify(msg):
 def run():
     print("Starting prediction...")
     
-    #if csv missing, run data.py to fetch data
     if not os.path.exists('trading_data.csv'):
         print("trading_data.csv missing. Running data.py...")
         from data import get_data
@@ -42,10 +41,11 @@ def run():
         'smh_move', 'rsi_1600', 'atr_ratio'
     ]
     
-    # train model
+    # train the model
     model = RandomForestClassifier(n_estimators=150, min_samples_leaf=2, random_state=42)
     model.fit(df[features], df['Target'])
     
+    # fetch today's data
     today = yf.download('QQQ', start=datetime.now() - timedelta(days=5), interval='60m', progress=False)
     if isinstance(today.columns, pd.MultiIndex):
         today.columns = today.columns.get_level_values(0)
