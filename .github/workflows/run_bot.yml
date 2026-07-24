@@ -2,8 +2,8 @@ name: Run Daily QQQ Trading Bot
 
 on:
   schedule:
-    - cron: '1 14 * * 1-5'
-    - cron: '5 20 * * 1-5'
+    - cron: '1 14 * * 1-5'  # 16:01 svensk tid
+    - cron: '5 20 * * 1-5'  # 22:05 svensk tid
   workflow_dispatch:
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
 
     - name: Install Dependencies
       run: |
-        pip install yfinance pandas numpy scikit-learn requests
+        pip install yfinance pandas numpy scikit-learn requests websockets
 
     - name: Generate Signal (16:01)
       if: github.event.schedule == '1 14 * * 1-5' || github.event_name == 'workflow_dispatch'
@@ -41,6 +41,6 @@ jobs:
       run: |
         git config --global user.name "QQQ-Trading-Bot"
         git config --global user.email "bot@qqqtrade.com"
-        git add trading_data.csv virtual_balance.json today_trade.json || true
-        git commit -m "Update trading data and account balance [skip ci]" || true
+        git add virtual_balance.json today_trade.json || true
+        git commit -m "Update account balance and trade logs [skip ci]" || true
         git push || true
