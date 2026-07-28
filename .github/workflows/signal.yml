@@ -1,0 +1,38 @@
+# sends a signal to Discord at 16:01 (UTC) every weekday, and runs the live bot to execute trades based on the signal
+name: 1. Generate Signal (16:01)
+
+on:
+  schedule:
+    - cron: '1 14 * * 1-5'  # 16:01
+  workflow_dispatch:
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        pip install yfinance pandas numpy scikit-learn requests websockets
+
+    - name: Run Signal Bot
+      env:
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      run: |
+        python data.py
+        python live_bot.py
+
+    - name: Commit and Push Trade Log
+      run: |
+        git config --global user.name "QQQ-Trading-Bot"
+        git config --global user.email "bot@qqqtrade.com"
+        git add today_trade.json trading_data.csv || true
+        git commit -m "Update trade signal [skip ci]" || true
+        git push || true

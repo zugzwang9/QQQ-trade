@@ -1,0 +1,37 @@
+# sends a signal to Discord at 22:05 (UTC) every weekday, and runs the close bot to evaluate trades
+name: 2. Evaluate Trade (22:05)
+
+on:
+  schedule:
+    - cron: '5 20 * * 1-5'  # 22:05
+  workflow_dispatch:
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        pip install yfinance pandas numpy scikit-learn requests websockets
+
+    - name: Run Close Bot
+      env:
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      run: |
+        python close_bot.py
+
+    - name: Commit and Push Balance
+      run: |
+        git config --global user.name "QQQ-Trading-Bot"
+        git config --global user.email "bot@qqqtrade.com"
+        git add virtual_balance.json || true
+        git commit -m "Update virtual balance [skip ci]" || true
+        git push || true
