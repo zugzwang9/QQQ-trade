@@ -14,9 +14,9 @@ def notify(msg):
         try:
             res = requests.post(DISCORD_URL, json={"content": msg})
             res.raise_for_status()
-            print("Discord notification sent successfully.")
+            print("Discord message sent successfully.")
         except Exception as e:
-            print(f"Failed to send Discord notification: {e}")
+            print(f"Failed to send Discord message: {e}")
     else:
         print("No DISCORD_WEBHOOK_URL found. Printing message locally:")
         print(msg)
@@ -34,6 +34,11 @@ def run():
     df.index = pd.to_datetime(df.index)
     df.sort_index(ascending=True, inplace=True)
     
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    df_hist = df[df.index.strftime('%Y-%m-%d') < today_str]
+    if len(df_hist) == 0:
+        df_hist = df
+
     df['Target'] = np.where(df['qqq_trade_move'] > 0, 1, 0)
     features = [
         'vix_prev', 'dax_move', 'spy_move', 'nikkei_move', 
@@ -41,15 +46,17 @@ def run():
         'smh_move', 'rsi_1600', 'atr_ratio'
     ]
     
-    # train the model
     model = RandomForestClassifier(n_estimators=150, min_samples_leaf=2, random_state=42)
     model.fit(df[features], df['Target'])
     
-    # fetch today's data
     today = yf.download('QQQ', start=datetime.now() - timedelta(days=5), interval='60m', progress=False)
     if isinstance(today.columns, pd.MultiIndex):
         today.columns = today.columns.get_level_values(0)
         
+    if today.empty:
+        notify("Yahoo Finance returned empty data. Could not generate signal.")
+        return
+
     diff = today['Close'].diff()
     up = diff.where(diff > 0, 0).rolling(14).mean()
     down = (-diff.where(diff < 0, 0)).rolling(14).mean()
@@ -66,7 +73,7 @@ def run():
     day_candles = today[today['Date'] == latest_date]
     
     if len(day_candles) == 0:
-        print("No market data found for today.")
+        notify(f"Warning: No market candles found for {latest_date}.")
         return
 
     open_1530 = float(day_candles.iloc[0]['Open'])
@@ -78,15 +85,15 @@ def run():
     last_atr = float(day_candles.iloc[0]['atr']) if not pd.isna(day_candles.iloc[0]['atr']) else 1.0
 
     live_X = pd.DataFrame([{
-        'vix_prev': float(df['vix_prev'].iloc[-1]),
-        'dax_move': float(df['dax_move'].iloc[-1]),
-        'spy_move': float(df['spy_move'].iloc[-1]),
-        'nikkei_move': float(df['nikkei_move'].iloc[-1]),
-        'us10y_move': float(df['us10y_move'].iloc[-1]),
-        'rut_move': float(df['rut_move'].iloc[-1]),
+        'vix_prev': float(df_hist['vix_prev'].iloc[-1]),
+        'dax_move': float(df_hist['dax_move'].iloc[-1]),
+        'spy_move': float(df_hist['spy_move'].iloc[-1]),
+        'nikkei_move': float(df_hist['nikkei_move'].iloc[-1]),
+        'us10y_move': float(df_hist['us10y_move'].iloc[-1]),
+        'rut_move': float(df_hist['rut_move'].iloc[-1]),
         'qqq_open_move': float(((price_1600 - open_1530) / open_1530) * 100),
-        'vol_ratio': float(vol_1600 / df['vol_1530'].tail(5).mean()),
-        'smh_move': float(df['smh_move'].iloc[-1]),
+        'vol_ratio': float(vol_1600 / df_hist['vol_1530'].tail(5).mean()),
+        'smh_move': float(df_hist['smh_move'].iloc[-1]),
         'rsi_1600': last_rsi,
         'atr_ratio': float(range_1600 / last_atr) if last_atr > 0 else 0.0
     }])
@@ -99,10 +106,9 @@ def run():
     msg = f"QQQ Trading Bot ({latest_date})\n"
     msg += f"Model Probability: {prob:.1f}%\n"
     msg += f"First 30m Return: {open_move:.2f}%\n"
-    msg += f"ATR Ratio: {atr_val:.2f}\n"
     
     if atr_val < 0.60:
-        msg += "Signal blocked by volatility filter. Action: NO TRADE"
+        msg += "Blocked by volatility filter. Action: NO TRADE"
     else:
         if prob > 56.0:
             msg += "Action: LONG QQQ"

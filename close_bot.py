@@ -12,16 +12,20 @@ def notify(msg):
         try:
             res = requests.post(DISCORD_URL, json={"content": msg})
             res.raise_for_status()
-            print("Discord notification sent successfully.")
+            print("Discord message sent successfully.")
         except Exception as e:
-            print(f"Failed to send Discord notification: {e}")
+            print(f"Failed to send Discord message: {e}")
     else:
+        print("No DISCORD_WEBHOOK_URL found. Local output:")
         print(msg)
 
 def run():
     print("Starting evening market check...")
+    
     if not os.path.exists("today_trade.json"):
-        print("No trade recorded today.")
+        msg = "Close Bot: 'today_trade.json' was not found in the repository."
+        print(msg)
+        notify(msg)
         return
         
     with open("today_trade.json", "r") as f:
@@ -35,9 +39,9 @@ def run():
     else:
         balance = 100.0
 
-    sig = trade["signal"]
-    entry = float(trade["entry_price"])
-    date_str = trade["date"]
+    sig = trade.get("signal", 0)
+    entry = float(trade.get("entry_price", 0.0))
+    date_str = str(trade.get("date", ""))
     
     if sig == 0:
         msg = f"QQQ-report ({date_str})\n"
@@ -46,15 +50,24 @@ def run():
         notify(msg)
         return
 
-    today_data = yf.download('QQQ', start=datetime.now() - timedelta(days=5), interval='60m', progress=False)
+    today_data = yf.download('QQQ', start=datetime.now() - timedelta(days=7), interval='60m', progress=False)
+    if today_data.empty:
+        notify(f"Error: Could not fetch price data from Yahoo Finance for {date_str}.")
+        return
+
     if isinstance(today_data.columns, pd.MultiIndex):
         today_data.columns = today_data.columns.get_level_values(0)
         
-    today_data['Date'] = today_data.index.date
-    day_candles = today_data[today_data['Date'].astype(str) == date_str]
+    today_data['Date'] = today_data.index.date.astype(str)
+    day_candles = today_data[today_data['Date'] == date_str]
     
     if len(day_candles) < 2:
-        notify(f"Could not find sufficient price data for {date_str}.")
+        latest_date = today_data['Date'].iloc[-1]
+        day_candles = today_data[today_data['Date'] == latest_date]
+        date_str = latest_date
+
+    if len(day_candles) < 2:
+        notify(f"Could not find price for trade ({date_str}).")
         return
 
     candles = day_candles.iloc[1:]
