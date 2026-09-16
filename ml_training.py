@@ -45,9 +45,9 @@ for idx, row in X_test.iterrows():
     if atr_val < 0.60:
         continue
         
-    if prob > 55.0:
+    if prob > 65.0:
         res.loc[idx, 'signal'] = 1
-    elif prob < 45.0:
+    elif prob < 35.0:
         res.loc[idx, 'signal'] = -1
 
 qqq_hour = yf.download('QQQ', start=X_test.index.min() - timedelta(days=5), end=X_test.index.max() + timedelta(days=5), interval='60m', progress=False)
@@ -55,7 +55,6 @@ if isinstance(qqq_hour.columns, pd.MultiIndex):
     qqq_hour.columns = qqq_hour.columns.get_level_values(0)
 qqq_hour['Date'] = qqq_hour.index.date
 
-trail_pct = 1.00
 trade_returns = []
 
 for idx, row in res.iterrows():
@@ -69,38 +68,13 @@ for idx, row in res.iterrows():
         trade_returns.append(0.0)
         continue
         
-    candles = day_candles.iloc[1:]
-    entry = day_candles.iloc[0]['Close']
-    stopped = False
-    ret = 0.0
+    entry = float(day_candles.iloc[0]['Close'])
+    close_val = float(day_candles.iloc[-1]['Close'])
     
     if sig == 1:
-        peak = entry
-        stop = entry * (1 - trail_pct / 100)
-        for _, candle in candles.iterrows():
-            if candle['Low'] <= stop:
-                stopped = True
-                ret = -trail_pct
-                break
-            if candle['High'] > peak:
-                peak = candle['High']
-                stop = peak * (1 - trail_pct / 100)
-        if not stopped:
-            ret = ((day_candles.iloc[-1]['Close'] - entry) / entry) * 100
-            
+        ret = ((close_val - entry) / entry) * 100
     elif sig == -1:
-        floor = entry
-        stop = entry * (1 + trail_pct / 100)
-        for _, candle in candles.iterrows():
-            if candle['High'] >= stop:
-                stopped = True
-                ret = -trail_pct
-                break
-            if candle['Low'] < floor:
-                floor = candle['Low']
-                stop = floor * (1 + trail_pct / 100)
-        if not stopped:
-            ret = ((entry - day_candles.iloc[-1]['Close']) / entry) * 100
+        ret = ((entry - close_val) / entry) * 100
 
     trade_returns.append(float(ret))
 
