@@ -50,6 +50,7 @@ def run():
         notify(msg)
         return
 
+    # Hämta 7 dagars tim-data
     today_data = yf.download('QQQ', start=datetime.now() - timedelta(days=7), interval='60m', progress=False)
     if today_data.empty:
         notify(f"Error: Could not fetch price data from Yahoo Finance for {date_str}.")
@@ -61,6 +62,7 @@ def run():
     today_data['Date'] = today_data.index.date.astype(str)
     day_candles = today_data[today_data['Date'] == date_str]
     
+    #Om färre än 2 ljus hittas för exakt date_str pga UTC-skifte vid stängning, använd de sista tillgängliga ljusen i datasetet UTAN att ändra date_str
     if len(day_candles) < 2:
         day_candles = today_data.tail(7)
 
