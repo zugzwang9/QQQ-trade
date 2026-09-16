@@ -12,7 +12,6 @@ def get_data(days=700):
     chunks = []
     curr_end = end
     
-    #yfinance limit fix fetch in 30-day blocks
     while curr_end > start:
         curr_start = max(curr_end - timedelta(days=30), start)
         chunk = yf.download('QQQ', start=curr_start, end=curr_end, interval='60m', progress=False)
@@ -27,13 +26,11 @@ def get_data(days=700):
     if isinstance(df_raw.columns, pd.MultiIndex):
         df_raw.columns = df_raw.columns.get_level_values(0)
         
-    #RSI
     diff = df_raw['Close'].diff()
     up = diff.where(diff > 0, 0).rolling(14).mean()
     down = (-diff.where(diff < 0, 0)).rolling(14).mean()
     df_raw['rsi'] = 100 - (100 / (1 + up / down))
     
-    #ATR
     h_l = df_raw['High'] - df_raw['Low']
     h_pc = np.abs(df_raw['High'] - df_raw['Close'].shift(1))
     l_pc = np.abs(df_raw['Low'] - df_raw['Close'].shift(1))
@@ -44,7 +41,6 @@ def get_data(days=700):
     days_list = df_raw['Date'].unique()
     rows = []
     
-    #daily price points
     for d in days_list:
         day = df_raw[df_raw['Date'] == d]
         if len(day) < 2:
@@ -81,7 +77,7 @@ def get_data(days=700):
 
     df['qqq_open_move'] = ((df['price_1600'] - df['open_1530']) / df['open_1530']) * 100
     df['qqq_trade_move'] = ((df['close_2200'] - df['price_1600']) / df['price_1600']) * 100
-    df['vol_ratio'] = df['vol_1530'] / df['vol_1530'].rolling(5).mean()
+    df['vol_ratio'] = df['vol_1530'] / df['vol_1530'].shift(1).rolling(5).mean()
     df['atr_ratio'] = df['range_1530'] / df['atr_1600']
 
     macros = {
@@ -92,7 +88,6 @@ def get_data(days=700):
     macro_df = pd.DataFrame(index=df.index)
     
     for name, ticker in macros.items():
-        #SMH
         if name == 'smh':
             smh = yf.download('SMH', start=start, end=end, interval='60m', progress=False)
             if isinstance(smh.columns, pd.MultiIndex):

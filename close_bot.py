@@ -62,17 +62,15 @@ def run():
     day_candles = today_data[today_data['Date'] == date_str]
     
     if len(day_candles) < 2:
-        latest_date = today_data['Date'].iloc[-1]
-        day_candles = today_data[today_data['Date'] == latest_date]
-        date_str = latest_date
+        day_candles = today_data.tail(7)
 
-    if len(day_candles) < 2:
-        notify(f"Could not find price for trade ({date_str}).")
+    if len(day_candles) == 0:
+        notify(f"Could not find price candles for trade on {date_str}.")
         return
 
-    candles = day_candles.iloc[1:]
+    candles = day_candles.iloc[1:] if len(day_candles) > 1 else day_candles
     close_val = float(day_candles.iloc[-1]['Close'])
-    trail_pct = 0.25
+    trail_pct = 1.00
     stopped = False
     ret = 0.0
     status_msg = ""

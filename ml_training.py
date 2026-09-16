@@ -22,14 +22,13 @@ features = [
 X = df[features]
 y = df['Target']
 
-# split 70% train, 30% test
 split_date = '2025-11-01'
 X_train = X[X.index < split_date]
 X_test = X[X.index >= split_date]
 y_train = y[X.index < split_date]
 y_test = y[X.index >= split_date]
 
-model = RandomForestClassifier(n_estimators=150, min_samples_leaf=2, random_state=42)
+model = RandomForestClassifier(n_estimators=100, max_depth=4, min_samples_leaf=15, random_state=42)
 model.fit(X_train, y_train)
 
 probs = model.predict_proba(X_test)[:, 1]
@@ -43,14 +42,12 @@ for idx, row in X_test.iterrows():
     prob = res.loc[idx, 'prob_up']
     atr_val = row['atr_ratio']
     
-    # Skip days with no market momentum, less than 60% of normal volatility
     if atr_val < 0.60:
         continue
         
-    # confidence levels trading
-    if prob > 56.0:
+    if prob > 55.0:
         res.loc[idx, 'signal'] = 1
-    elif prob < 44.0:
+    elif prob < 45.0:
         res.loc[idx, 'signal'] = -1
 
 qqq_hour = yf.download('QQQ', start=X_test.index.min() - timedelta(days=5), end=X_test.index.max() + timedelta(days=5), interval='60m', progress=False)
@@ -58,7 +55,7 @@ if isinstance(qqq_hour.columns, pd.MultiIndex):
     qqq_hour.columns = qqq_hour.columns.get_level_values(0)
 qqq_hour['Date'] = qqq_hour.index.date
 
-trail_pct = 0.25
+trail_pct = 1.00
 trade_returns = []
 
 for idx, row in res.iterrows():
@@ -83,7 +80,7 @@ for idx, row in res.iterrows():
         for _, candle in candles.iterrows():
             if candle['Low'] <= stop:
                 stopped = True
-                ret = ((stop - entry) / entry) * 100
+                ret = -trail_pct
                 break
             if candle['High'] > peak:
                 peak = candle['High']
@@ -97,7 +94,7 @@ for idx, row in res.iterrows():
         for _, candle in candles.iterrows():
             if candle['High'] >= stop:
                 stopped = True
-                ret = ((entry - stop) / entry) * 100
+                ret = -trail_pct
                 break
             if candle['Low'] < floor:
                 floor = candle['Low']
@@ -125,6 +122,5 @@ if len(trades) > 0:
         pf = wins.sum() / abs(losses.sum())
         print(f"Profit Factor: {pf:.2f}")
 
-# print last 8 days
 print("\nLast 8 trading days:")
 print(res[['actual', 'actual_return', 'prob_up', 'signal', 'balance']].tail(8))

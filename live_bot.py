@@ -46,7 +46,7 @@ def run():
         'smh_move', 'rsi_1600', 'atr_ratio'
     ]
     
-    model = RandomForestClassifier(n_estimators=150, min_samples_leaf=2, random_state=42)
+    model = RandomForestClassifier(n_estimators=100, max_depth=4, min_samples_leaf=15, random_state=42)
     model.fit(df[features], df['Target'])
     
     today = yf.download('QQQ', start=datetime.now() - timedelta(days=5), interval='60m', progress=False)
@@ -55,6 +55,13 @@ def run():
         
     if today.empty:
         notify("Yahoo Finance returned empty data. Could not generate signal.")
+        return
+
+    today['Date'] = today.index.date
+    latest_date = today['Date'].iloc[-1]
+    
+    if str(latest_date) != today_str:
+        print(f"Market closed today ({today_str}). Latest candle is from {latest_date}.")
         return
 
     diff = today['Close'].diff()
@@ -68,10 +75,7 @@ def run():
     tr = pd.concat([h_l, h_pc, l_pc], axis=1).max(axis=1)
     today['atr'] = tr.rolling(14).mean()
     
-    today['Date'] = today.index.date
-    latest_date = today['Date'].iloc[-1]
     day_candles = today[today['Date'] == latest_date]
-    
     if len(day_candles) == 0:
         notify(f"Warning: No market candles found for {latest_date}.")
         return
@@ -110,10 +114,10 @@ def run():
     if atr_val < 0.60:
         msg += "Blocked by volatility filter. Action: NO TRADE"
     else:
-        if prob > 56.0:
+        if prob > 55.0:
             msg += "Action: LONG QQQ"
             signal = 1
-        elif prob < 44.0:
+        elif prob < 45.0:
             msg += "Action: SHORT QQQ"
             signal = -1
         else:
